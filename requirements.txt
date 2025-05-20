@@ -1,3 +1,4 @@
+protobuf<3.21
 langchain
 langchain-community
 langchainhub
