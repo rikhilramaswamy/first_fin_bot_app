@@ -1,4 +1,5 @@
 protobuf<3.21
+pysqlite3-binary
 langchain
 langchain-community
 langchainhub
