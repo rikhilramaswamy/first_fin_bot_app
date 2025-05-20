@@ -18,6 +18,11 @@ import os
 import sys
 import streamlit as st
 from constants import OPENAI_API_KEY, LLM_MODEL_NAME
+import pysqlite3
+import sys
+
+sys.modules["sqlite3"] = pysqlite3
+import chromadb
 
 
 def get_sitemap(url):
