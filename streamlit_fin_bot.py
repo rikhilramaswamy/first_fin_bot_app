@@ -51,13 +51,10 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	docs = []
 	print("scarping the website ...")
 	for i, url in enumerate(urls):
-	    loader = WebBaseLoader(url)
-	    docs.extend(loader.load())
-	    if i % 10 == 0:
-	        print("\ti", i)
-            if i == 10:
-                break
-	print("Done!")
+		loader = WebBaseLoader(url)
+		docs.extend(loader.load())
+		if i == 10:
+			break
 	return docs
 
 
@@ -100,7 +97,7 @@ def create_chain():
 st.title("RAG based Financial ChatBot")
 
 # Set environment variables
-os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
+os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
 
 
 # Add a text input widget to get input from the user
