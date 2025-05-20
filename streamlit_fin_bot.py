@@ -60,10 +60,11 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 
 def vector_retriever(docs):
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
-                                               chunk_overlap=200)
+												   chunk_overlap=200)
 	splits = text_splitter.split_documents(docs)
+	oi_embeddings = OpenAIEmbeddings()
 	vectorstore = Chroma.from_documents(documents=splits,
-	                                    embedding=OpenAIEmbeddings())
+										embedding=oi_embeddings)
 	return vectorstore.as_retriever()
 
 def create_chain():
@@ -97,7 +98,7 @@ def create_chain():
 st.title("RAG based Financial ChatBot")
 
 # Set environment variables
-os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
+os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
 
 
 # Add a text input widget to get input from the user
