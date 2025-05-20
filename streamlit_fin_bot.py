@@ -58,8 +58,6 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	for i, url in enumerate(urls):
 		loader = WebBaseLoader(url)
 		docs.extend(loader.load())
-		if i == 10:
-			break
 	return docs
 
 
@@ -119,21 +117,3 @@ if st.button("OK_Input"):
     # This block of code will only execute when the "OK_Input" button is clicked.
     st.write("LLM response is:")
     st.write(response["answer"])
-
-
-'''
-if __name__ == "__main__":
-	if len(sys.argv) != 3:
-		print("Expected two arguments OPENAI_API_KEY and the question")
-		exit(1)
-
-	print(len(sys.argv))
-
-	os.environ["OPENAI_API_KEY"] = sys.argv[1]
-	rag_chain = create_chain()
-	response = rag_chain.invoke({"input": sys.argv[2]})
-	print("-----------------")
-	print("Answer:")
-	print(response["answer"])
-'''
-
