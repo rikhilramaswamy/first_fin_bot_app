@@ -1,4 +1,5 @@
 protobuf<3.21
+sqlite3>=3.35.0
 langchain
 langchain-community
 langchainhub
