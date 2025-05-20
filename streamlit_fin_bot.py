@@ -100,7 +100,7 @@ def create_chain():
 st.title("RAG based Financial ChatBot")
 
 # Set environment variables
-os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 
 
 # Add a text input widget to get input from the user
