@@ -55,8 +55,8 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	    docs.extend(loader.load())
 	    if i % 10 == 0:
 	        print("\ti", i)
-        if i == 10:
-            break
+            if i == 10:
+                break
 	print("Done!")
 	return docs
 
