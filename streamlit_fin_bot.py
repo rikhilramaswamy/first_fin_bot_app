@@ -17,7 +17,7 @@ import ssl
 import os
 import sys
 import streamlit as st
-from constants import OPENAI_API_KEY, LLM_MODEL_NAME
+from constants import OPENAI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
 import pysqlite3
 import sys
 
@@ -107,9 +107,11 @@ os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 # Add a text input widget to get input from the user
 user_input = st.text_input("Enter some text:", "Hello, Streamlit!")
 
-rag_chain = create_chain()
+if rag_chain not in st.session_state:
+	st.session_state['rag_chain'] = create_chain(SITEMAP_URL)
+	st.write("invoking data fetch to create rag chain")
 
-response = rag_chain.invoke({"input": user_input})
+response = st.session_state['rag_chain'].invoke({"input": user_input})
 
 # Add a button. The st.button() function returns True if the button was clicked,
 # and False otherwise.
