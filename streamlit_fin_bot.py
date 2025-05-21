@@ -70,8 +70,8 @@ def vector_retriever(docs):
 										embedding=oi_embeddings)
 	return vectorstore.as_retriever()
 
-def create_chain():
-	docs = scrape_site()
+def create_chain(url):
+	docs = scrape_site(url)
 	retriever = vector_retriever(docs)
 	# 2. Incorporate the retriever into a question-answering chain.
 	system_prompt = (
