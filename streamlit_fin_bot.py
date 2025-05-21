@@ -107,7 +107,7 @@ os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 # Add a text input widget to get input from the user
 user_input = st.text_input("Enter some text:", "Hello, Streamlit!")
 
-if rag_chain not in st.session_state:
+if 'rag_chain' not in st.session_state:
 	st.session_state['rag_chain'] = create_chain(SITEMAP_URL)
 	st.write("invoking data fetch to create rag chain")
 
