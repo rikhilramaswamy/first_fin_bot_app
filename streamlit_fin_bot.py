@@ -21,6 +21,8 @@ from constants import OPENAI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
 import pysqlite3
 import sys
 
+# chromaDB requires sqlite3 on streamlit platform
+# this fixes sqlite3 library install/dependency issue
 sys.modules["sqlite3"] = pysqlite3
 import chromadb
 
@@ -105,8 +107,12 @@ os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 
 
 # Add a text input widget to get input from the user
-user_input = st.text_input("Enter some text:", "Hello, Streamlit!")
+user_input = st.text_input("Enter your question below:", "Ask, Bot!")
 
+# store the rag_chain object INSTEAD of fetching data and/or creating rag_chain object
+# on every LLM request 
+# IOW: create_chain() API is invoked only on APP init for the first time
+# on subsequent query rag_chain object created on init is re-used
 if 'rag_chain' not in st.session_state:
 	st.session_state['rag_chain'] = create_chain(SITEMAP_URL)
 	st.write("invoking data fetch to create rag chain")
@@ -115,7 +121,6 @@ response = st.session_state['rag_chain'].invoke({"input": user_input})
 
 # Add a button. The st.button() function returns True if the button was clicked,
 # and False otherwise.
-if st.button("OK_Input"):
+if st.button("Ask Question"):
     # This block of code will only execute when the "OK_Input" button is clicked.
-    st.write("LLM response is:")
     st.write(response["answer"])
