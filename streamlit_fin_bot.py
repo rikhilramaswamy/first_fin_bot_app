@@ -143,7 +143,12 @@ if 'messages' not in st.session_state:
 response = st.session_state['rag_chain'].invoke({"input": user_input,
                                                  "chat_history": st.session_state['messages']}) 
 # Append the user input and bot response to the messages list
-st.session_state['messages'].append((user_input, response["answer"]))
+st.session_state['messages'].extend(
+    [
+        {"role": "user", "content": user_input},
+        {"role": "assistant", "content": response["answer"]},
+    ]
+)
 
 # Add a button. The st.button() function returns True if the button was clicked,
 # and False otherwise.
