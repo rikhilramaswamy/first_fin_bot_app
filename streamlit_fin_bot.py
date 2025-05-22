@@ -135,10 +135,6 @@ st.title("RAG based Financial ChatBot")
 # Set environment variables
 os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 
-
-# Add a text input widget to get input from the user
-user_input = st.text_input("Enter your question below:", "Ask, Bot!")
-
 # store the rag_chain object INSTEAD of fetching data and/or creating rag_chain object
 # on every LLM request 
 # IOW: create_chain() API is invoked only on APP init for the first time
@@ -151,16 +147,12 @@ if 'rag_chain' not in st.session_state:
 if 'messages' not in st.session_state:
     st.session_state['messages'] = []
 
+if user_input := st.chat_input("Please ask your question!:"):
+	response = st.session_state['rag_chain'].invoke({"input": user_input,
+													 "chat_history": st.session_state['messages']}) 
+	# Append the user input and bot response to the messages list
+	st.session_state['messages'].extend(
+		[HumanMessage(user_input), 
+		 AIMessage(response["answer"])])
 
-response = st.session_state['rag_chain'].invoke({"input": user_input,
-                                                 "chat_history": st.session_state['messages']}) 
-# Append the user input and bot response to the messages list
-st.session_state['messages'].extend(
-    [HumanMessage(user_input), 
-    AIMessage(response["answer"])])
-
-# Add a button. The st.button() function returns True if the button was clicked,
-# and False otherwise.
-if st.button("Ask Question"):
-    # This block of code will only execute when the "OK_Input" button is clicked.
-    st.write(response["answer"])
+	st.write(response["answer"])
