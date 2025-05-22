@@ -64,8 +64,6 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	for i, url in enumerate(urls):
 		loader = WebBaseLoader(url)
 		docs.extend(loader.load())
-		if i == 10:
-			break
 	return docs
 
 
