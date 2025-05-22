@@ -9,6 +9,8 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains import create_history_aware_retriever
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_core.messages import AIMessage, HumanMessage
+
 import bs4
 from langchain_community.document_loaders import RecursiveUrlLoader
 
@@ -62,6 +64,8 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	for i, url in enumerate(urls):
 		loader = WebBaseLoader(url)
 		docs.extend(loader.load())
+		if i == 10:
+			break
 	return docs
 
 
@@ -144,11 +148,8 @@ response = st.session_state['rag_chain'].invoke({"input": user_input,
                                                  "chat_history": st.session_state['messages']}) 
 # Append the user input and bot response to the messages list
 st.session_state['messages'].extend(
-    [
-        {"role": "user", "content": user_input},
-        {"role": "assistant", "content": response["answer"]},
-    ]
-)
+    [HumanMessage(user_input), 
+    AIMessage(response["answer"])])
 
 # Add a button. The st.button() function returns True if the button was clicked,
 # and False otherwise.
