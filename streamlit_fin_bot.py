@@ -70,7 +70,7 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 def vector_retriever(_docs):
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
 												   chunk_overlap=200)
-	splits = text_splitter.split_documents(docs)
+	splits = text_splitter.split_documents(_docs)
 	oi_embeddings = OpenAIEmbeddings()
 	
 	# Create a persistent Chroma instance and add documents
@@ -114,7 +114,8 @@ def create_rag_chain(url):
 
 	# Example of how to create a QA prompt (ensure system_prompt is defined)
 	system_prompt = (
-		"You are a financial assistant for question-answering tasks. "
+		"You are a financial assistant for question-answering tasks related to finance or related topics only "
+		"Do not answer questions related to any other topics except finance"
 		"Use the following pieces of retrieved context to answer "
 		"the question. If you don't know the answer, say that you "
 		"don't know. Use three sentences maximum and keep the "
