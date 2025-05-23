@@ -9,4 +9,5 @@ bs4
 langchain-openai
 lxml
 streamlit
+setuptools
 langchain-google-genai
