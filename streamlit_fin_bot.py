@@ -20,7 +20,7 @@ import ssl
 import os
 import sys
 import streamlit as st
-from constants import OPENAI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
+from constants import GEMINI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
 import pysqlite3
 import sys
 
@@ -77,11 +77,34 @@ def vector_retriever(_docs):
     )
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    vectorstore = Chroma.from_documents(
-        documents=splits, 
-        embedding=gemini_embeddings,
+    BATCH_SIZE = 16  # Try 8, 16, or 32 depending on API limits
+
+    all_embeddings = []
+    all_metadatas = []
+    all_texts = []
+
+    for i in range(0, len(splits), BATCH_SIZE):
+        batch = splits[i:i+BATCH_SIZE]
+        batch_texts = [doc.page_content for doc in batch]
+        batch_metadatas = [doc.metadata for doc in batch]
+        try:
+            batch_embeddings = gemini_embeddings.embed_documents(batch_texts)
+            all_embeddings.extend(batch_embeddings)
+            all_metadatas.extend(batch_metadatas)
+            all_texts.extend(batch_texts)
+        except Exception as e:
+            st.warning(f"Batch {i//BATCH_SIZE+1} failed: {e}")
+
+    vectorstore = Chroma(
+        embedding_function=gemini_embeddings,
         persist_directory=persistent_db_path
-    )  
+    )
+    vectorstore.add_embeddings(
+        embeddings=all_embeddings,
+        metadatas=all_metadatas,
+        documents=all_texts
+    )
+    vectorstore.persist()
 
     st.write("--- Vector store created/loaded ---")
     return vectorstore.as_retriever()
