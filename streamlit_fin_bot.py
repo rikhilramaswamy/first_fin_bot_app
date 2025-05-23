@@ -97,11 +97,13 @@ def vector_retriever(_docs):
         time.sleep(0.1)
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    vectorstore = Chroma.from_embeddings(
-        embeddings=np.array(all_embeddings),
+    vectorstore = Chroma(
+    persist_directory=persistent_db_path
+    )
+    vectorstore.add_embeddings(
+        embeddings=all_embeddings,
         documents=doc_texts,
-        metadatas=doc_metadatas,
-        persist_directory=persistent_db_path
+        metadatas=doc_metadatas
     )
 
     st.write("--- Vector store created/loaded ---")
