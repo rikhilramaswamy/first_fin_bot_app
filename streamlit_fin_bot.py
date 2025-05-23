@@ -11,6 +11,10 @@ from langchain.chains import create_history_aware_retriever
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_chroma import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document # Import Document type
+from google.api_core import exceptions # For more specific error handling
 
 import bs4
 from langchain_community.document_loaders import RecursiveUrlLoader
@@ -21,6 +25,7 @@ from bs4 import BeautifulSoup
 import ssl
 import os
 import sys
+import time
 import streamlit as st
 from constants import OPENAI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
 import pysqlite3
@@ -67,32 +72,148 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 		docs.extend(loader.load())
 	return docs
 
+
+# --- Configuration ---
+CHUNK_SIZE = 700  # Smaller chunk size
+CHUNK_OVERLAP = 100 # Adjusted overlap
+BATCH_SIZE = 30   # Number of document contents to send per embedding API call
+MAX_RETRIES = 5
+INITIAL_BACKOFF_TIME = 1 # seconds
+
+
+# --- Helper function for embedding with retry logic ---
+@st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
+def get_embeddings_with_retry(
+    embedding_model_instance: GoogleGenerativeAIEmbeddings,
+    content_batch: list[str], # Expects a list of strings
+    task_type: str,
+    output_dimensionality: int,
+    max_retries: int = MAX_RETRIES,
+    initial_backoff: int = INITIAL_BACKOFF_TIME
+) -> list[list[float]]: # Returns a list of embedding vectors
+    """
+    Attempts to get embeddings for a batch of content with retry logic.
+    """
+    retries = 0
+    backoff_time = initial_backoff
+    
+    # Use the underlying client directly for finer control over API calls
+    # This assumes GoogleGenerativeAIEmbeddings has a 'client' attribute
+    # which holds the raw Google AI client.
+    api_client = embedding_model_instance.client
+
+    while retries < max_retries:
+        try:
+            response = api_client.embed_content(
+                model=embedding_model_instance.model_name, # Use model name from instance
+                content=content_batch,
+                task_type=task_type,
+                output_dimensionality=output_dimensionality
+            )
+            # The embeddings are usually in response.embeddings, and each has a .values attribute
+            return [e.values for e in response.embeddings]
+        except exceptions.ServiceUnavailable as e:
+            st.warning(f"Service Unavailable (503) during embedding, retrying in {backoff_time}s... ({e})")
+        except exceptions.DeadlineExceeded as e:
+            st.warning(f"Deadline Exceeded (504) during embedding, retrying in {backoff_time}s... ({e})")
+        except exceptions.ResourceExhausted as e: # Catch 429 specifically for rate limits
+            st.warning(f"Rate Limit Exceeded (429) during embedding, retrying in {backoff_time}s... ({e})")
+            # Increase backoff more aggressively for rate limits
+            backoff_time = min(backoff_time * 3, 60) # Max 60 seconds backoff for rate limits
+        except Exception as e: # Catch any other unexpected errors
+            st.error(f"An unexpected error occurred during embedding: {e}")
+            raise # Re-raise if it's not a recoverable error
+
+        time.sleep(backoff_time)
+        backoff_time *= 2 # Exponential backoff for subsequent retries
+        retries += 1
+    
+    raise Exception(f"Failed to get embeddings after {max_retries} retries.")
+
 @st.cache_resource  # Cache the creation of vector store if documents are processed in-app
-def vector_retriever(_docs):
+def vector_retriever(_docs: list[Document]):
     st.write("--- Inside vector_retriever function ---")
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP
+    )
     splits = text_splitter.split_documents(_docs)
-    # oi_embeddings = OpenAIEmbeddings()
-    # gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", task_type="RETRIEVAL_DOCUMENT")
-    gemini_embeddings = GoogleGenerativeAIEmbeddings(
+    st.write(f"Split {len(_docs)} documents into {len(splits)} chunks.")
+
+    gemini_embeddings_model = GoogleGenerativeAIEmbeddings(
         model="models/text-embedding-004",
         task_type="RETRIEVAL_DOCUMENT",
-        # Specify the desired output dimensionality here
-        # The parameter name is usually 'embed_kwargs' for passing extra
-        # arguments to the underlying embedding model's call.
-        embed_kwargs={"output_dimensionality": 768}
+        embed_kwargs={"output_dimensionality": 512} # Still pass this for initialization
     )
 
-    # Create a persistent Chroma instance and add documents
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    vectorstore = Chroma.from_documents(
-        documents=splits,
-        embedding=gemini_embeddings,
-        persist_directory=persistent_db_path
+    
+    # Ensure the directory exists
+    os.makedirs(persistent_db_path, exist_ok=True)
+
+    # Initialize Chroma DB (or load if it already exists)
+    # If the DB doesn't exist, Chroma will create it.
+    # If it exists, we'll add new embeddings to it.
+    vectorstore = Chroma(
+        persist_directory=persistent_db_path,
+        embedding_function=gemini_embeddings_model # Pass the embedding function
     )
 
-    st.write("--- Vector store created/loaded ---")
+    # --- Manual Batching for Embedding and Adding to Chroma ---
+    st.write(f"Starting embedding process with batch size: {BATCH_SIZE}...")
+    
+    # Store documents and their IDs to add to Chroma later
+    # Chroma.add_embeddings requires ids, embeddings, and metadatas
+    # If you need specific IDs for your chunks, generate them here
+    # For simplicity, we'll let Chroma generate them or use sequential numbers
+    
+    all_chunk_texts = [s.page_content for s in splits]
+    all_chunk_metadatas = [s.metadata for s in splits]
+    
+    # List to store all generated embeddings
+    all_generated_embeddings = []
+    
+    # Iterate through chunks in batches
+    for i in range(0, len(all_chunk_texts), BATCH_SIZE):
+        chunk_batch_texts = all_chunk_texts[i : i + BATCH_SIZE]
+        
+        try:
+            # Use the retry helper function for embedding
+            batch_embeddings = get_embeddings_with_retry(
+                embedding_model_instance=gemini_embeddings_model,
+                content_batch=chunk_batch_texts,
+                task_type="RETRIEVAL_DOCUMENT",
+                output_dimensionality=512 # Ensure this matches what you're expecting
+            )
+            all_generated_embeddings.extend(batch_embeddings)
+            st.write(f"Successfully embedded batch {i // BATCH_SIZE + 1} of {len(all_chunk_texts) // BATCH_SIZE + 1}")
+        except Exception as e:
+            st.error(f"Failed to embed batch {i // BATCH_SIZE + 1} after retries. Error: {e}")
+            # Decide if you want to stop or continue with subsequent batches
+            # For robust systems, you might log the failed batch and continue
+            raise # Re-raise the exception to propagate the error upwards
+
+    # Now add all the generated embeddings and their corresponding documents to Chroma
+    # We need to ensure that the embeddings correspond to the original Document objects' content and metadata.
+    # Since we processed texts in order, the ordering should match.
+    
+    if len(all_generated_embeddings) == len(splits):
+        st.write(f"Adding {len(all_generated_embeddings)} embeddings to ChromaDB...")
+        # Chroma.add_embeddings expects a list of embeddings (list[list[float]])
+        # and a list of metadatas (list[dict]) and optional ids (list[str])
+        vectorstore.add_embeddings(
+            embeddings=all_generated_embeddings,
+            metadatas=all_chunk_metadatas,
+            documents=all_chunk_texts # Pass the original texts corresponding to embeddings
+            # Chroma will generate IDs if not provided
+        )
+        vectorstore.persist() # Make sure to persist changes
+        st.write("--- Vector store created/updated ---")
+    else:
+        st.error("Mismatch between number of generated embeddings and splits. DB not fully populated.")
+        raise ValueError("Embedding process failed for some chunks.")
+
     return vectorstore.as_retriever()
 	
 
