@@ -89,11 +89,11 @@ INITIAL_BACKOFF_TIME = 1 # seconds
 # Try importing from the main `google.generativeai` module itself,
 # or from `google.generativeai.types` if that's where they are.
 # A common pattern is to just import google.generativeai and access its types.
-import google.generativeai as genai
+#import google.generativeai as genai
 # If the above doesn't work, then try:
-# from google.generativeai.types import Content, Part
+#from google.generativeai.types import Content, Part
 # Or if it's in protos (less common for direct use but possible):
-# from google.generativeai import protos as genai_protos # Then use genai_protos.Content, genai_protos.Part
+from google.generativeai import protos as genai_protos # Then use genai_protos.Content, genai_protos.Part
 
 
 # --- Helper function for embedding with retry logic, now with proper caching ---
@@ -127,7 +127,7 @@ def get_embeddings_with_retry(
     # The direct `client.embed_content` still requires the protobuf types.
     # Let's try `genai.types.Content` and `genai.types.Part` as the most likely.
     api_content_batch = [
-        genai.types.Content(parts=[genai.types.Part(text=text_item)]) for text_item in content_batch
+        genai_protos.Content(parts=[genai_protos.Part(text=text_item)]) for text_item in content_batch
     ]
     # --- END CONVERSION ---
 
