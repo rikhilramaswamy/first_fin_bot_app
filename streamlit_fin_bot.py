@@ -59,6 +59,8 @@ def get_urls(xml, name=None, data=None, verbose=False):
         if xml.find("loc"):
             loc = url.findNext("loc").text
             urls.append(loc)
+        if len(urls) > 5:
+            break
     return urls
 
 
@@ -87,8 +89,8 @@ INITIAL_BACKOFF_TIME = 1 # seconds
 @st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
 def get_embeddings_with_retry(
     model_name: str,             # Pass model name as string (hashable)
-    task_type: str,              # Pass task type as string (hashable)
-    output_dimensionality: int,  # Pass dimensionality as int (hashable)
+    # task_type: str,            # REMOVED: Managed by LangChain's GGE object
+    # output_dimensionality: int,# REMOVED: Managed by LangChain's GGE object
     content_batch: list[str],
     max_retries: int = MAX_RETRIES,
     initial_backoff: int = INITIAL_BACKOFF_TIME
@@ -101,10 +103,11 @@ def get_embeddings_with_retry(
 
     # Reconstruct the GoogleGenerativeAIEmbeddings instance INSIDE the cached function
     # This ensures that for the same model config and input batch, the result is cached.
+    # task_type and output_dimensionality are passed here during initialization
     temp_embedding_model = GoogleGenerativeAIEmbeddings(
         model=model_name,
-        task_type=task_type,
-        embed_kwargs={"output_dimensionality": output_dimensionality}
+        task_type="RETRIEVAL_DOCUMENT", # Directly use the desired task_type here
+        embed_kwargs={"output_dimensionality": 512} # Directly use the desired dimensionality here
     )
     api_client = temp_embedding_model.client # Get the underlying client
 
@@ -114,17 +117,17 @@ def get_embeddings_with_retry(
     while retries < max_retries:
         try:
             response = api_client.embed_content(
-                model=model_name, # Use the model_name passed as argument
-                content=content_batch,
-                task_type=task_type,
-                output_dimensionality=output_dimensionality
+                model=model_name,
+                content=content_batch
+                # Removed task_type=task_type and output_dimensionality=output_dimensionality
+                # from direct arguments to api_client.embed_content
             )
             return [e.values for e in response.embeddings]
         except exceptions.ServiceUnavailable as e:
             st.warning(f"Service Unavailable (503) during embedding, retrying in {backoff_time}s... ({e})")
         except exceptions.DeadlineExceeded as e:
             st.warning(f"Deadline Exceeded (504) during embedding, retrying in {backoff_time}s... ({e})")
-        except exceptions.ResourceExhausted as e: # Catch 429 specifically for rate limits
+        except exceptions.ResourceExhausted as e:
             st.warning(f"Rate Limit Exceeded (429) during embedding, retrying in {backoff_time}s... ({e})")
             backoff_time = min(backoff_time * 3, 60)
         except Exception as e:
@@ -151,8 +154,8 @@ def vector_retriever(_docs: list[Document]):
 
     # Define the embedding model configuration as hashable parameters
     model_name = "models/text-embedding-004"
-    task_type = "RETRIEVAL_DOCUMENT"
-    output_dimensionality = 512
+    # task_type = "RETRIEVAL_DOCUMENT" # These are now hardcoded into the get_embeddings_with_retry
+    # output_dimensionality = 512    # function's internal GoogleGenerativeAIEmbeddings creation
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
     os.makedirs(persistent_db_path, exist_ok=True)
@@ -162,8 +165,8 @@ def vector_retriever(_docs: list[Document]):
     # as it's only used once to initialize Chroma.
     gemini_embeddings_for_chroma = GoogleGenerativeAIEmbeddings(
         model=model_name,
-        task_type=task_type,
-        embed_kwargs={"output_dimensionality": output_dimensionality}
+        task_type="RETRIEVAL_DOCUMENT",
+        embed_kwargs={"output_dimensionality": 512}
     )
 
     vectorstore = Chroma(
@@ -186,9 +189,7 @@ def vector_retriever(_docs: list[Document]):
             # Call the cached embedding function with hashable parameters
             batch_embeddings = get_embeddings_with_retry(
                 model_name=model_name,
-                task_type=task_type,
-                output_dimensionality=output_dimensionality,
-                content_batch=chunk_batch_texts # This is the main changing input
+                content_batch=chunk_batch_texts # Only batch content and model_name are needed here
             )
             all_generated_embeddings.extend(batch_embeddings)
             st.write(f"Successfully embedded batch {i // BATCH_SIZE + 1} of {len(all_chunk_texts) // BATCH_SIZE + 1}")
