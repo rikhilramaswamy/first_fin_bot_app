@@ -1,4 +1,4 @@
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
@@ -25,8 +25,10 @@ import pysqlite3
 import sys
 import time
 
+from sentence_transformers import SentenceTransformer  # For local embeddings
+import numpy as np
+
 # chromaDB requires sqlite3 on streamlit platform
-# this fixes sqlite3 library install/dependency issue
 sys.modules["sqlite3"] = pysqlite3
 import chromadb
 
@@ -76,54 +78,53 @@ def embed_with_retry(embedding_fn, texts, max_retries=5):
             time.sleep(2 ** attempt)
     raise Exception("Embedding failed after retries.")
 
-@st.cache_resource # Cache the creation of vector store if documents are processed in-app
+@st.cache_resource
 def vector_retriever(_docs):
     st.write("--- Inside vector_retriever function ---")
-
-    # 1. Reduce chunk size for faster embedding
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=64)
     splits = text_splitter.split_documents(_docs)
-    gemini_embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        task_type="RETRIEVAL_DOCUMENT",
-        embed_kwargs={"output_dimensionality": 512}
-    )
+    doc_texts = [doc.page_content for doc in splits]
+    doc_metadatas = [doc.metadata for doc in splits]
+
+    # Use SentenceTransformer for local embeddings
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    BATCH_SIZE = 8
+    all_embeddings = []
+    for i in range(0, len(doc_texts), BATCH_SIZE):
+        batch_texts = doc_texts[i:i+BATCH_SIZE]
+        batch_embeddings = embed_with_retry(embedder.encode, batch_texts)
+        all_embeddings.extend(batch_embeddings)
+        time.sleep(0.1)
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    BATCH_SIZE = 1 # 2. Lower batch size to avoid timeouts
-
-    all_embeddings = []
-    all_metadatas = []
-    all_texts = []
-
-    for i in range(0, len(splits), BATCH_SIZE):
-        batch = splits[i:i+BATCH_SIZE]
-        batch_texts = [doc.page_content for doc in batch]
-        batch_metadatas = [doc.metadata for doc in batch]
-        try:
-            # 3. Add retry logic for embedding
-            batch_embeddings = embed_with_retry(gemini_embeddings.embed_documents, batch_texts)
-            all_embeddings.extend(batch_embeddings)
-            all_metadatas.extend(batch_metadatas)
-            all_texts.extend(batch_texts)
-        except Exception as e:
-            st.warning(f"Batch {i//BATCH_SIZE+1} failed after retries: {e}")
-
-    vectorstore = Chroma(
-        embedding_function=gemini_embeddings,
+    vectorstore = Chroma.from_embeddings(
+        embeddings=np.array(all_embeddings),
+        documents=doc_texts,
+        metadatas=doc_metadatas,
         persist_directory=persistent_db_path
     )
-    vectorstore.add_embeddings(
-        embeddings=all_embeddings,
-        metadatas=all_metadatas,
-        documents=all_texts
-    )
-    vectorstore.persist()
 
     st.write("--- Vector store created/loaded ---")
-    return vectorstore.as_retriever()
 
-@st.cache_resource # Cache the entire RAG chain for a given URL
+    # Custom retriever that uses the same embedder for query embedding
+    class SentenceTransformerRetriever:
+        def __init__(self, vectorstore, embedder):
+            self.vectorstore = vectorstore
+            self.embedder = embedder
+
+        def get_relevant_documents(self, query):
+            query_emb = self.embedder.encode([query])
+            # Chroma's similarity_search_by_vector expects a 1D array
+            results = self.vectorstore.similarity_search_by_vector(query_emb[0])
+            return results
+
+        # For LangChain compatibility
+        def __call__(self, query):
+            return self.get_relevant_documents(query)
+
+    return SentenceTransformerRetriever(vectorstore, embedder)
+
+@st.cache_resource
 def create_rag_chain(url):
     docs = scrape_site(url)
     retriever = vector_retriever(docs)
@@ -144,7 +145,7 @@ def create_rag_chain(url):
         ]
     )
 
-    llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME) 
+    llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME)
 
     history_aware_retriever = create_history_aware_retriever(
         llm, retriever, contextualize_q_prompt
@@ -173,33 +174,24 @@ def create_rag_chain(url):
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
     return rag_chain
-      
 
 st.title("RAG based Financial ChatBot")
 
-# Set environment variables
 os.environ['GEMINI_API_KEY'] = st.secrets["GEMINI_API_KEY"]
 
-# store the rag_chain object INSTEAD of fetching data and/or creating rag_chain object
-# on every LLM request 
-# IOW: create_chain() API is invoked only on APP init for the first time
-# on subsequent query rag_chain object created on init is re-used
 if 'rag_chain' not in st.session_state:
     st.session_state['rag_chain'] = create_rag_chain(SITEMAP_URL)
 
-# use session state to store chat history
 if 'messages' not in st.session_state:
     st.session_state['messages'] = []
 
 if user_input := st.chat_input("Please ask your question!:"):
-    response = st.session_state['rag_chain'].invoke({"input": user_input,
-                                                     "chat_history": st.session_state['messages']}) 
-    # Append the user input and bot response to the messages list
+    response = st.session_state['rag_chain'].invoke({
+        "input": user_input,
+        "chat_history": st.session_state['messages']
+    })
     st.session_state['messages'].extend(
-        [HumanMessage(user_input), 
-         AIMessage(response["answer"])])
-    
-    # Limit the number of messages to the LAST_N_CHATS chats
-    st.session_state['messages'] = st.session_state['messages'][-LAST_N_CHATS:]  # Keep only the last 5 messages
-
+        [HumanMessage(user_input), AIMessage(response["answer"])]
+    )
+    st.session_state['messages'] = st.session_state['messages'][-LAST_N_CHATS:]
     st.write(response["answer"])
