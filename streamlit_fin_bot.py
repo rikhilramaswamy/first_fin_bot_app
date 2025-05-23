@@ -66,8 +66,10 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 		docs.extend(loader.load())
 	return docs
 
-@st.cache_data # Cache the creation of vector store if documents are processed in-app
+@st.cache_resource # Cache the creation of vector store if documents are processed in-app
 def vector_retriever(_docs):
+	st.write("--- Inside vector_retriever function ---")
+
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
 												   chunk_overlap=200)
 	splits = text_splitter.split_documents(_docs)
@@ -81,6 +83,7 @@ def vector_retriever(_docs):
     persist_directory=persistent_db_path
     )  
 	
+	st.write("--- Vector store created/loaded ---")
 	return vectorstore.as_retriever()
 	
 
@@ -149,7 +152,6 @@ os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
 # on subsequent query rag_chain object created on init is re-used
 if 'rag_chain' not in st.session_state:
 	st.session_state['rag_chain'] = create_rag_chain(SITEMAP_URL)
-	st.write("invoking data fetch to create rag chain")
 
 # use session state to store chat history
 if 'messages' not in st.session_state:
