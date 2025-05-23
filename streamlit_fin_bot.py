@@ -33,8 +33,11 @@ import sys
 
 # chromaDB requires sqlite3 on streamlit platform
 # this fixes sqlite3 library install/dependency issue
-sys.modules["sqlite3"] = pysqlite3
-import chromadb
+#sys.modules["sqlite3"] = pysqlite3
+#import chromadb
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 
 def get_sitemap(url):
