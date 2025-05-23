@@ -3,6 +3,7 @@ from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
@@ -73,13 +74,15 @@ def vector_retriever(_docs):
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
 												   chunk_overlap=200)
 	splits = text_splitter.split_documents(_docs)
-	oi_embeddings = OpenAIEmbeddings()
+	#oi_embeddings = OpenAIEmbeddings()
+	gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", task_type="RETRIEVAL_DOCUMENT")
+
 	
 	# Create a persistent Chroma instance and add documents
 	persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
 	vectorstore = Chroma.from_documents(
     documents=splits, 
-    embedding=oi_embeddings,
+    embedding=gemini_embeddings,
     persist_directory=persistent_db_path
     )  
 	
@@ -109,7 +112,10 @@ def create_rag_chain(url):
 		]
 	)
 
-	llm = ChatOpenAI(model=LLM_MODEL_NAME)
+	#llm = ChatOpenAI(model=LLM_MODEL_NAME)
+	# Use the Gemini 2.0 Flash model
+	llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME) 
+
 
 	history_aware_retriever = create_history_aware_retriever(
 		llm, retriever, contextualize_q_prompt
@@ -144,7 +150,9 @@ def create_rag_chain(url):
 st.title("RAG based Financial ChatBot")
 
 # Set environment variables
-os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
+#os.environ['OPENAI_API_KEY'] = st.secrets["OPENAI_API_KEY"]
+os.environ['GEMINI_API_KEY'] = st.secrets["GEMINI_API_KEY"]
+
 
 # store the rag_chain object INSTEAD of fetching data and/or creating rag_chain object
 # on every LLM request 
