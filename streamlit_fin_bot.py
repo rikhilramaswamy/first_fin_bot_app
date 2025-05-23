@@ -14,6 +14,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Import Document type
 from google.api_core import exceptions # For more specific error handling
+# Import the necessary types for Content and Part from the actual google-generativeai client
+from google.generativeai.types import Content, Part # <--- IMPORTANT NEW IMPORT
+
 
 import bs4
 from langchain_community.document_loaders import RecursiveUrlLoader
@@ -89,9 +92,7 @@ INITIAL_BACKOFF_TIME = 1 # seconds
 @st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
 def get_embeddings_with_retry(
     model_name: str,             # Pass model name as string (hashable)
-    # task_type: str,            # REMOVED: Managed by LangChain's GGE object
-    # output_dimensionality: int,# REMOVED: Managed by LangChain's GGE object
-    content_batch: list[str],
+    content_batch: list[str],    # This is still a list of Python strings
     max_retries: int = MAX_RETRIES,
     initial_backoff: int = INITIAL_BACKOFF_TIME
 ) -> list[list[float]]:
@@ -111,6 +112,13 @@ def get_embeddings_with_retry(
     )
     api_client = temp_embedding_model.client # Get the underlying client
 
+    # --- Convert list[str] to list[Content] for the raw API client ---
+    # Each Content object will contain a single Part with the text.
+    api_content_batch = [
+        Content(parts=[Part(text=text_item)]) for text_item in content_batch
+    ]
+    # --- END CONVERSION ---
+
     retries = 0
     backoff_time = initial_backoff
 
@@ -118,9 +126,7 @@ def get_embeddings_with_retry(
         try:
             response = api_client.embed_content(
                 model=model_name,
-                content=content_batch
-                # Removed task_type=task_type and output_dimensionality=output_dimensionality
-                # from direct arguments to api_client.embed_content
+                content=api_content_batch # <--- USE THE CONVERTED BATCH HERE
             )
             return [e.values for e in response.embeddings]
         except exceptions.ServiceUnavailable as e:
@@ -152,17 +158,11 @@ def vector_retriever(_docs: list[Document]):
     splits = text_splitter.split_documents(_docs)
     st.write(f"Split {len(_docs)} documents into {len(splits)} chunks.")
 
-    # Define the embedding model configuration as hashable parameters
     model_name = "models/text-embedding-004"
-    # task_type = "RETRIEVAL_DOCUMENT" # These are now hardcoded into the get_embeddings_with_retry
-    # output_dimensionality = 512    # function's internal GoogleGenerativeAIEmbeddings creation
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
     os.makedirs(persistent_db_path, exist_ok=True)
 
-    # Initialize the GoogleGenerativeAIEmbeddings instance for ChromaDB
-    # This instance does NOT need to be cached with @st.cache_resource
-    # as it's only used once to initialize Chroma.
     gemini_embeddings_for_chroma = GoogleGenerativeAIEmbeddings(
         model=model_name,
         task_type="RETRIEVAL_DOCUMENT",
@@ -181,15 +181,13 @@ def vector_retriever(_docs: list[Document]):
 
     all_generated_embeddings = []
 
-    # Iterate through chunks in batches
     for i in range(0, len(all_chunk_texts), BATCH_SIZE):
         chunk_batch_texts = all_chunk_texts[i : i + BATCH_SIZE]
 
         try:
-            # Call the cached embedding function with hashable parameters
             batch_embeddings = get_embeddings_with_retry(
                 model_name=model_name,
-                content_batch=chunk_batch_texts # Only batch content and model_name are needed here
+                content_batch=chunk_batch_texts
             )
             all_generated_embeddings.extend(batch_embeddings)
             st.write(f"Successfully embedded batch {i // BATCH_SIZE + 1} of {len(all_chunk_texts) // BATCH_SIZE + 1}")
