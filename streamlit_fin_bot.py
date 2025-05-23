@@ -88,7 +88,7 @@ def vector_retriever(_docs):
     )
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    BATCH_SIZE = 4  # 2. Lower batch size to avoid timeouts
+    BATCH_SIZE = 2  # 2. Lower batch size to avoid timeouts
 
     all_embeddings = []
     all_metadatas = []
