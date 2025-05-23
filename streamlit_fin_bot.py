@@ -30,6 +30,8 @@ import time
 sys.modules["sqlite3"] = pysqlite3
 import chromadb
 
+LAST_N_CHATS = 10
+
 def get_sitemap(url):
     req = Request(
         url=url,
@@ -65,7 +67,7 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
         docs.extend(loader.load())
     return docs
 
-def embed_with_retry(embedding_fn, texts, max_retries=3):
+def embed_with_retry(embedding_fn, texts, max_retries=5):
     for attempt in range(max_retries):
         try:
             return embedding_fn(texts)
@@ -79,7 +81,7 @@ def vector_retriever(_docs):
     st.write("--- Inside vector_retriever function ---")
 
     # 1. Reduce chunk size for faster embedding
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=64)
     splits = text_splitter.split_documents(_docs)
     gemini_embeddings = GoogleGenerativeAIEmbeddings(
         model="models/embedding-001",
@@ -88,7 +90,7 @@ def vector_retriever(_docs):
     )
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    BATCH_SIZE = 2  # 2. Lower batch size to avoid timeouts
+    BATCH_SIZE = 1 # 2. Lower batch size to avoid timeouts
 
     all_embeddings = []
     all_metadatas = []
@@ -196,5 +198,8 @@ if user_input := st.chat_input("Please ask your question!:"):
     st.session_state['messages'].extend(
         [HumanMessage(user_input), 
          AIMessage(response["answer"])])
+    
+    # Limit the number of messages to the LAST_N_CHATS chats
+    st.session_state['messages'] = st.session_state['messages'][-LAST_N_CHATS:]  # Keep only the last 5 messages
 
     st.write(response["answer"])
