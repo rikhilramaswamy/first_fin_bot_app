@@ -66,15 +66,24 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 		docs.extend(loader.load())
 	return docs
 
-
+@st.cache_data # Cache the creation of vector store if documents are processed in-app
 def vector_retriever(docs):
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
 												   chunk_overlap=200)
 	splits = text_splitter.split_documents(docs)
 	oi_embeddings = OpenAIEmbeddings()
-	vectorstore = Chroma.from_documents(documents=splits,
-										embedding=oi_embeddings)
+	
+	# Create a persistent Chroma instance and add documents
+	persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
+	vectorstore = Chroma.from_documents(
+    documents=splits, 
+    embedding=oi_embeddings,
+    persist_directory=persistent_db_path
+    )  
+	
 	return vectorstore.as_retriever()
+	
+
 
 def create_rag_chain(url):
 	docs = scrape_site(url)
