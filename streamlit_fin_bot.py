@@ -83,15 +83,24 @@ def vector_retriever(_docs):
     st.write("--- Inside vector_retriever function ---")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=64)
     splits = text_splitter.split_documents(_docs)
-    # splits is a list of Document objects
-
-    # Use SentenceTransformer for local embeddings
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    
+    class SentenceTransformerEmbeddings:
+        def __init__(self, model):
+            self.model = model
+
+        def embed_documents(self, texts):
+            return self.model.encode(texts).tolist()
+
+        def embed_query(self, text):
+            return self.model.encode([text])[0]
+    
+    embedding_function = SentenceTransformerEmbeddings(embedder)
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
     vectorstore = Chroma.from_documents(
-        documents=splits,  # Pass Document objects directly
-        embedding=lambda texts: embedder.encode(texts).tolist(),
+        documents=splits,
+        embedding=embedding_function,
         persist_directory=persistent_db_path
     )
 
@@ -104,15 +113,14 @@ def vector_retriever(_docs):
             self.embedder = embedder
 
         def get_relevant_documents(self, query):
-            query_emb = self.embedder.encode([query])[0]
+            query_emb = self.embedder.embed_query(query)
             results = self.vectorstore.similarity_search_by_vector(query_emb)
             return results
 
-        # For LangChain compatibility
         def __call__(self, query):
             return self.get_relevant_documents(query)
 
-    return SentenceTransformerRetriever(vectorstore, embedder)
+    return SentenceTransformerRetriever(vectorstore, embedding_function)
 
 @st.cache_resource
 def create_rag_chain(url):
