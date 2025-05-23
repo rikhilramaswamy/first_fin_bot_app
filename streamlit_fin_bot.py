@@ -11,7 +11,6 @@ from langchain.chains import create_history_aware_retriever
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Import Document type
 from google.api_core import exceptions # For more specific error handling
