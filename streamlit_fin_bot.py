@@ -86,7 +86,7 @@ INITIAL_BACKOFF_TIME = 1 # seconds
 # --- Helper function for embedding with retry logic ---
 @st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
 def get_embeddings_with_retry(
-    embedding_model_instance: GoogleGenerativeAIEmbeddings,
+    _embedding_model_instance: GoogleGenerativeAIEmbeddings,
     content_batch: list[str], # Expects a list of strings
     task_type: str,
     output_dimensionality: int,
@@ -102,12 +102,12 @@ def get_embeddings_with_retry(
     # Use the underlying client directly for finer control over API calls
     # This assumes GoogleGenerativeAIEmbeddings has a 'client' attribute
     # which holds the raw Google AI client.
-    api_client = embedding_model_instance.client
+    api_client = _embedding_model_instance.client
 
     while retries < max_retries:
         try:
             response = api_client.embed_content(
-                model=embedding_model_instance.model_name, # Use model name from instance
+                model=_embedding_model_instance.model_name, # Use model name from instance
                 content=content_batch,
                 task_type=task_type,
                 output_dimensionality=output_dimensionality
