@@ -23,6 +23,7 @@ import streamlit as st
 from constants import GEMINI_API_KEY, LLM_MODEL_NAME, SITEMAP_URL
 import pysqlite3
 import sys
+import time
 
 # chromaDB requires sqlite3 on streamlit platform
 # this fixes sqlite3 library install/dependency issue
@@ -64,11 +65,21 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
         docs.extend(loader.load())
     return docs
 
+def embed_with_retry(embedding_fn, texts, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return embedding_fn(texts)
+        except Exception as e:
+            st.warning(f"Embedding batch failed (attempt {attempt+1}): {e}")
+            time.sleep(2 ** attempt)
+    raise Exception("Embedding failed after retries.")
+
 @st.cache_resource # Cache the creation of vector store if documents are processed in-app
 def vector_retriever(_docs):
     st.write("--- Inside vector_retriever function ---")
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # 1. Reduce chunk size for faster embedding
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     splits = text_splitter.split_documents(_docs)
     gemini_embeddings = GoogleGenerativeAIEmbeddings(
         model="models/embedding-001",
@@ -77,7 +88,7 @@ def vector_retriever(_docs):
     )
 
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    BATCH_SIZE = 8  # Try 8, 16, or 32 depending on API limits
+    BATCH_SIZE = 4  # 2. Lower batch size to avoid timeouts
 
     all_embeddings = []
     all_metadatas = []
@@ -88,12 +99,13 @@ def vector_retriever(_docs):
         batch_texts = [doc.page_content for doc in batch]
         batch_metadatas = [doc.metadata for doc in batch]
         try:
-            batch_embeddings = gemini_embeddings.embed_documents(batch_texts)
+            # 3. Add retry logic for embedding
+            batch_embeddings = embed_with_retry(gemini_embeddings.embed_documents, batch_texts)
             all_embeddings.extend(batch_embeddings)
             all_metadatas.extend(batch_metadatas)
             all_texts.extend(batch_texts)
         except Exception as e:
-            st.warning(f"Batch {i//BATCH_SIZE+1} failed: {e}")
+            st.warning(f"Batch {i//BATCH_SIZE+1} failed after retries: {e}")
 
     vectorstore = Chroma(
         embedding_function=gemini_embeddings,
