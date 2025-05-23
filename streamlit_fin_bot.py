@@ -87,7 +87,7 @@ def vector_retriever(_docs):
 	return vectorstore.as_retriever()
 	
 
-
+@st.cache_resource # Cache the entire RAG chain for a given URL
 def create_rag_chain(url):
 	docs = scrape_site(url)
 	retriever = vector_retriever(docs)
