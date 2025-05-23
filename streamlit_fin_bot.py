@@ -67,7 +67,7 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 	return docs
 
 @st.cache_data # Cache the creation of vector store if documents are processed in-app
-def vector_retriever(docs):
+def vector_retriever(_docs):
 	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
 												   chunk_overlap=200)
 	splits = text_splitter.split_documents(docs)
