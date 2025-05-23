@@ -11,3 +11,4 @@ lxml
 streamlit
 setuptools
 langchain-google-genai
+google-generativeai
