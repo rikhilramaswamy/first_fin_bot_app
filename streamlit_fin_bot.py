@@ -14,8 +14,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Import Document type
 from google.api_core import exceptions # For more specific error handling
-# Import the necessary types for Content and Part from the actual google-generativeai client
-from google.generativeai.types import Content, Part # <--- IMPORTANT NEW IMPORT
 
 
 import bs4
@@ -88,6 +86,16 @@ MAX_RETRIES = 5
 INITIAL_BACKOFF_TIME = 1 # seconds
 
 
+# Try importing from the main `google.generativeai` module itself,
+# or from `google.generativeai.types` if that's where they are.
+# A common pattern is to just import google.generativeai and access its types.
+import google.generativeai as genai
+# If the above doesn't work, then try:
+# from google.generativeai.types import Content, Part
+# Or if it's in protos (less common for direct use but possible):
+# from google.generativeai import protos as genai_protos # Then use genai_protos.Content, genai_protos.Part
+
+
 # --- Helper function for embedding with retry logic, now with proper caching ---
 @st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
 def get_embeddings_with_retry(
@@ -102,20 +110,24 @@ def get_embeddings_with_retry(
     """
     st.write(f"Embedding a batch of {len(content_batch)} documents...")
 
-    # Reconstruct the GoogleGenerativeAIEmbeddings instance INSIDE the cached function
-    # This ensures that for the same model config and input batch, the result is cached.
-    # task_type and output_dimensionality are passed here during initialization
     temp_embedding_model = GoogleGenerativeAIEmbeddings(
         model=model_name,
-        task_type="RETRIEVAL_DOCUMENT", # Directly use the desired task_type here
-        embed_kwargs={"output_dimensionality": 512} # Directly use the desired dimensionality here
+        task_type="RETRIEVAL_DOCUMENT",
+        embed_kwargs={"output_dimensionality": 512}
     )
     api_client = temp_embedding_model.client # Get the underlying client
 
     # --- Convert list[str] to list[Content] for the raw API client ---
-    # Each Content object will contain a single Part with the text.
+    # Use genai.types.Content and genai.types.Part if direct import fails,
+    # or just genai.Content and genai.Part if they are top-level.
+    # Based on the latest SDK, `genai.types.Content` and `genai.types.Part`
+    # or sometimes directly `genai.GenerationConfig` and `genai.HarmCategory` are used.
+    # However, for constructing content, the `GenerativeModel`'s `generate_content`
+    # method is designed to handle raw strings and convert them.
+    # The direct `client.embed_content` still requires the protobuf types.
+    # Let's try `genai.types.Content` and `genai.types.Part` as the most likely.
     api_content_batch = [
-        Content(parts=[Part(text=text_item)]) for text_item in content_batch
+        genai.types.Content(parts=[genai.types.Part(text=text_item)]) for text_item in content_batch
     ]
     # --- END CONVERSION ---
 
@@ -126,7 +138,7 @@ def get_embeddings_with_retry(
         try:
             response = api_client.embed_content(
                 model=model_name,
-                content=api_content_batch # <--- USE THE CONVERTED BATCH HERE
+                content=api_content_batch
             )
             return [e.values for e in response.embeddings]
         except exceptions.ServiceUnavailable as e:
@@ -147,7 +159,9 @@ def get_embeddings_with_retry(
     raise Exception(f"Failed to get embeddings after {max_retries} retries.")
 
 
+
 @st.cache_resource  # Cache the creation of vector store if documents are processed in-app
+# --- Main vector_retriever function (remains mostly the same) ---
 def vector_retriever(_docs: list[Document]):
     st.write("--- Inside vector_retriever function ---")
 
@@ -209,6 +223,7 @@ def vector_retriever(_docs: list[Document]):
         raise ValueError("Embedding process failed for some chunks.")
 
     return vectorstore.as_retriever()
+
 	
 
 @st.cache_resource # Cache the entire RAG chain for a given URL
