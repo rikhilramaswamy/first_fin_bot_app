@@ -53,7 +53,7 @@ def get_urls(xml, name=None, data=None, verbose=False):
         if xml.find("loc"):
             loc = url.findNext("loc").text
             urls.append(loc)
-        if len(urls) > 5:
+        if len(urls) > 1:
             break
     return urls
 
@@ -89,21 +89,14 @@ def vector_retriever(_docs):
     # Use SentenceTransformer for local embeddings
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
     BATCH_SIZE = 8
-    all_embeddings = []
-    for i in range(0, len(doc_texts), BATCH_SIZE):
-        batch_texts = doc_texts[i:i+BATCH_SIZE]
-        batch_embeddings = embed_with_retry(embedder.encode, batch_texts)
-        all_embeddings.extend(batch_embeddings)
-        time.sleep(0.1)
 
+    # No need to precompute embeddings; let Chroma handle it via the embedding function
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-    vectorstore = Chroma(
-    persist_directory=persistent_db_path
-    )
-    vectorstore.add_embeddings(
-        embeddings=all_embeddings,
+    vectorstore = Chroma.from_documents(
         documents=doc_texts,
-        metadatas=doc_metadatas
+        embedding=lambda texts: embedder.encode(texts).tolist(),
+        metadatas=doc_metadatas,
+        persist_directory=persistent_db_path
     )
 
     st.write("--- Vector store created/loaded ---")
@@ -115,9 +108,8 @@ def vector_retriever(_docs):
             self.embedder = embedder
 
         def get_relevant_documents(self, query):
-            query_emb = self.embedder.encode([query])
-            # Chroma's similarity_search_by_vector expects a 1D array
-            results = self.vectorstore.similarity_search_by_vector(query_emb[0])
+            query_emb = self.embedder.encode([query])[0]
+            results = self.vectorstore.similarity_search_by_vector(query_emb)
             return results
 
         # For LangChain compatibility
