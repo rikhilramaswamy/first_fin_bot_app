@@ -95,7 +95,6 @@ INITIAL_BACKOFF_TIME = 1 # seconds
 # Or if it's in protos (less common for direct use but possible):
 from google.generativeai import protos as genai_protos # Then use genai_protos.Content, genai_protos.Part
 
-
 # --- Helper function for embedding with retry logic, now with proper caching ---
 @st.cache_data(ttl=600, show_spinner="Generating embeddings...") # Cache for 10 minutes (600 seconds)
 def get_embeddings_with_retry(
@@ -117,30 +116,20 @@ def get_embeddings_with_retry(
     )
     api_client = temp_embedding_model.client # Get the underlying client
 
-    # --- Convert list[str] to list[Content] for the raw API client ---
-    # Use genai.types.Content and genai.types.Part if direct import fails,
-    # or just genai.Content and genai.Part if they are top-level.
-    # Based on the latest SDK, `genai.types.Content` and `genai.types.Part`
-    # or sometimes directly `genai.GenerationConfig` and `genai.HarmCategory` are used.
-    # However, for constructing content, the `GenerativeModel`'s `generate_content`
-    # method is designed to handle raw strings and convert them.
-    # The direct `client.embed_content` still requires the protobuf types.
-    # Let's try `genai.types.Content` and `genai.types.Part` as the most likely.
-    api_content_batch = [
-        genai_protos.Content(parts=[genai_protos.Part(text=text_item)]) for text_item in content_batch
-    ]
-    # --- END CONVERSION ---
-
     retries = 0
     backoff_time = initial_backoff
 
+    embeddings = []
     while retries < max_retries:
         try:
-            response = api_client.embed_content(
-                model=model_name,
-                content=api_content_batch
-            )
-            return [e.values for e in response.embeddings]
+            for text_item in content_batch:
+                content_proto = genai_protos.Content(parts=[genai_protos.Part(text=text_item)])
+                response = api_client.embed_content(
+                    model=model_name,
+                    content=content_proto
+                )
+                embeddings.append(response.embeddings[0].values)
+            return embeddings
         except exceptions.ServiceUnavailable as e:
             st.warning(f"Service Unavailable (503) during embedding, retrying in {backoff_time}s... ({e})")
         except exceptions.DeadlineExceeded as e:
@@ -157,8 +146,6 @@ def get_embeddings_with_retry(
         retries += 1
 
     raise Exception(f"Failed to get embeddings after {max_retries} retries.")
-
-
 
 @st.cache_resource  # Cache the creation of vector store if documents are processed in-app
 # --- Main vector_retriever function (remains mostly the same) ---
