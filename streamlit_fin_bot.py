@@ -67,27 +67,33 @@ def scrape_site(url = "https://zerodha.com/varsity/chapter-sitemap2.xml"):
 		docs.extend(loader.load())
 	return docs
 
-@st.cache_resource # Cache the creation of vector store if documents are processed in-app
+@st.cache_resource  # Cache the creation of vector store if documents are processed in-app
 def vector_retriever(_docs):
-	st.write("--- Inside vector_retriever function ---")
+    st.write("--- Inside vector_retriever function ---")
 
-	text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
-												   chunk_overlap=200)
-	splits = text_splitter.split_documents(_docs)
-	#oi_embeddings = OpenAIEmbeddings()
-	gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", task_type="RETRIEVAL_DOCUMENT")
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splits = text_splitter.split_documents(_docs)
+    # oi_embeddings = OpenAIEmbeddings()
+    # gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", task_type="RETRIEVAL_DOCUMENT")
+    gemini_embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        task_type="RETRIEVAL_DOCUMENT",
+        # Specify the desired output dimensionality here
+        # The parameter name is usually 'embed_kwargs' for passing extra
+        # arguments to the underlying embedding model's call.
+        embed_kwargs={"output_dimensionality": 768}
+    )
 
-	
-	# Create a persistent Chroma instance and add documents
-	persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
-	vectorstore = Chroma.from_documents(
-    documents=splits, 
-    embedding=gemini_embeddings,
-    persist_directory=persistent_db_path
-    )  
-	
-	st.write("--- Vector store created/loaded ---")
-	return vectorstore.as_retriever()
+    # Create a persistent Chroma instance and add documents
+    persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
+    vectorstore = Chroma.from_documents(
+        documents=splits,
+        embedding=gemini_embeddings,
+        persist_directory=persistent_db_path
+    )
+
+    st.write("--- Vector store created/loaded ---")
+    return vectorstore.as_retriever()
 	
 
 @st.cache_resource # Cache the entire RAG chain for a given URL
