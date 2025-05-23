@@ -83,19 +83,15 @@ def vector_retriever(_docs):
     st.write("--- Inside vector_retriever function ---")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=64)
     splits = text_splitter.split_documents(_docs)
-    doc_texts = [doc.page_content for doc in splits]
-    doc_metadatas = [doc.metadata for doc in splits]
+    # splits is a list of Document objects
 
     # Use SentenceTransformer for local embeddings
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    BATCH_SIZE = 8
 
-    # No need to precompute embeddings; let Chroma handle it via the embedding function
     persistent_db_path = os.path.join(os.getcwd(), "mydb.chromadb")
     vectorstore = Chroma.from_documents(
-        documents=doc_texts,
+        documents=splits,  # Pass Document objects directly
         embedding=lambda texts: embedder.encode(texts).tolist(),
-        metadatas=doc_metadatas,
         persist_directory=persistent_db_path
     )
 
