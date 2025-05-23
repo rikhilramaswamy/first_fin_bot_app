@@ -10,5 +10,5 @@ langchain-openai
 lxml
 streamlit
 setuptools
-langchain-google-genai
-google-generativeai
+google-generativeai>=0.8.4
+langchain-google-genai>=2.1.3
